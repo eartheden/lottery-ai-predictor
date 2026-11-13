@@ -1,0 +1,14 @@
+{
+  "name": "dlt-data-center",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "大乐透数据中心：最新开奖、多图表走势与多策略下期号码预测 · 本地部署版",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

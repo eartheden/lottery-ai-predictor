@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080c14" />
+    <meta
+      name="description"
+      content="超级大乐透数据中心：最新开奖、历史走势多图表分析、下期号码预测。仅查询中国体育彩票超级大乐透。"
+    />
+    <title>大乐透数据中心 · 开奖 / 走势 / 预测</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-glow page-glow-a" aria-hidden="true"></div>
+    <div class="page-glow page-glow-b" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#home" data-view-link="home" aria-label="大乐透数据中心首页">
+          <span class="brand-mark"><span>大</span></span>
+          <span class="brand-text">
+            <strong>大乐透</strong>
+            <small>SUPER LOTTO DATA</small>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="主导航">
+          <button class="nav-btn active" type="button" data-view="home">开奖大厅</button>
+          <button class="nav-btn" type="button" data-view="trend">历史走势</button>
+          <button class="nav-btn" type="button" data-view="predict">下期预测</button>
+        </nav>
+
+        <div class="header-tools">
+          <div class="sync-state" id="syncState" title="正在从中国体彩网同步数据">
+            <span class="sync-dot is-loading"></span>
+            <span id="syncText">正在同步</span>
+          </div>
+          <button class="icon-btn" id="refreshBtn" type="button" aria-label="刷新开奖数据" title="刷新开奖数据">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-2.34 5.66" stroke-linecap="round" />
+              <path d="M20 5v6h-6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="view is-active" id="view-home">
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="pulse-dot"></span> 超级大乐透 · 官方数据同步</div>
+            <h1>一注大乐透<br /><span>看懂走势与可能</span></h1>
+            <p class="hero-desc">
+              只聚焦超级大乐透。最新开奖、奖池销量、历史走势与多策略选号，在一个页面里看清。
+            </p>
+            <div class="hero-actions">
+              <button class="btn btn-primary" id="heroRefresh" type="button">
+                立即刷新
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button class="btn btn-ghost" type="button" data-view-link="trend">进入走势分析 <span>→</span></button>
+            </div>
+            <div class="hero-stats">
+              <div class="hero-stat">
+                <span class="stat-label">最新期号</span>
+                <strong id="statIssue">—</strong><span class="stat-unit">期</span>
+              </div>
+              <div class="hero-stat">
+                <span class="stat-label">奖池滚存</span>
+                <strong id="statPool">—</strong>
+              </div>
+              <div class="hero-stat">
+                <span class="stat-label">最近同步</span>
+                <strong id="statSync">—</strong><span class="stat-unit">北京时间</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-card" id="heroCard" aria-live="polite">
+            <div class="hero-skeleton">
+              <span class="skeleton-line w40"></span>
+              <span class="skeleton-line w70 tall"></span>
+              <span class="skeleton-line w55"></span>
+              <div class="skeleton-balls"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <span class="skeleton-line w100"></span>
+              <span class="skeleton-line w80"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-stats" id="quickStats" aria-label="近期数据速览">
+          <div class="quick-stat skeleton-card"></div>
+          <div class="quick-stat skeleton-card"></div>
+          <div class="quick-stat skeleton-card"></div>
+          <div class="quick-stat skeleton-card"></div>
+        </section>
+
+        <section class="home-grid">
+          <div class="panel recent-panel">
+            <div class="panel-head">
+              <div>
+                <div class="section-kicker">RECENT DRAWS</div>
+                <h2>最近开奖</h2>
+              </div>
+              <div class="panel-tools">
+                <div class="mini-search">
+                  <input id="issueInput" inputmode="numeric" maxlength="7" placeholder="输入期号，如 26123" aria-label="按期号查询" />
+                  <button id="issueSearchBtn" type="button">查询</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="search-result-bar" id="searchResultBar" hidden>
+              <span id="searchResultText"></span>
+              <button type="button" id="clearSearchBtn">返回全部</button>
+            </div>
+
+            <div class="table-wrap">
+              <table class="history-table dlt-table">
+                <thead>
+                  <tr>
+                    <th>期号</th>
+                    <th>开奖日期</th>
+                    <th>前区号码</th>
+                    <th>后区号码</th>
+                    <th>本期销量</th>
+                    <th>奖池</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+              </table>
+            </div>
+            <div class="table-empty" id="historyEmpty" hidden>
+              <span class="empty-icon">⌕</span>
+              <strong>暂无开奖记录</strong>
+              <p>换一个期号试试。</p>
+            </div>
+            <div class="pagination" id="pagination"></div>
+          </div>
+
+          <aside class="side-column">
+            <div class="panel compact-check" id="checkPanel">
+              <div class="panel-head compact">
+                <div>
+                  <div class="section-kicker">QUICK CHECK</div>
+                  <h3>快速核对</h3>
+                </div>
+                <button class="text-btn" id="randomBtn" type="button">随机一注</button>
+              </div>
+              <div class="check-note" id="checkRule">与最新一期比对前区 5 个 + 后区 2 个号码 · 参考奖级未区分追加</div>
+              <div class="check-form compact" id="checkForm"></div>
+              <div class="compact-check-actions">
+                <button class="btn btn-primary small" id="checkBtn" type="button">核对最新一期</button>
+                <button class="text-btn" id="clearBtn" type="button">清空</button>
+              </div>
+              <div class="check-mini-result" id="checkResult" aria-live="polite">
+                <span class="mini-muted">填写号码后查看命中情况</span>
+              </div>
+            </div>
+
+            <div class="panel side-cta">
+              <span class="side-cta-kicker">NEXT DRAW LAB</span>
+              <h3>下期号码，换个思路</h3>
+              <p>用宇宙常量、AI 多维集成、混沌与马尔可夫生成多组号码，仅作选号灵感。</p>
+              <div class="side-cta-chips">
+                <span>AI 多维集成</span><span>宇宙常量</span><span>混沌 · 马尔可夫</span>
+              </div>
+              <button class="btn btn-ghost small" type="button" data-view-link="predict">去生成预测 <span>→</span></button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="predict-banner">
+          <div>
+            <div class="section-kicker">TREND → NUMBERS</div>
+            <h2>历史走势不止能看，也能变成选号参考</h2>
+            <p>近 100 期频率、遗漏、和值、奇偶、大小、区间与号码矩阵，全部可视化。</p>
+          </div>
+          <div class="predict-banner-actions">
+            <button class="btn btn-ghost" type="button" data-view-link="trend">浏览完整走势</button>
+            <button class="btn btn-primary" type="button" data-view-link="predict">生成下期号码</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-trend">
+        <div class="page-heading trend-heading">
+          <div>
+            <div class="section-kicker">HISTORY TREND</div>
+            <h1>历史走势</h1>
+            <p>从频率、遗漏、和值、结构到号码矩阵，多维观察大乐透历史数据。</p>
+          </div>
+          <div class="trend-controls">
+            <div class="period-tabs" id="trendPeriod" role="tablist" aria-label="分析周期">
+              <button class="chip" type="button" data-limit="30" role="tab">近30期</button>
+              <button class="chip is-active" type="button" data-limit="50" role="tab">近50期</button>
+              <button class="chip" type="button" data-limit="100" role="tab">近100期</button>
+            </div>
+            <span class="trend-updated" id="trendUpdated">—</span>
+          </div>
+        </div>
+
+        <div class="trend-insights" id="trendInsights">
+          <div class="insight-card skeleton-card"></div>
+          <div class="insight-card skeleton-card"></div>
+          <div class="insight-card skeleton-card"></div>
+          <div class="insight-card skeleton-card"></div>
+        </div>
+
+        <div class="chart-grid">
+          <article class="panel chart-panel span-2">
+            <div class="chart-head">
+              <div><h3>前区号码出现频率</h3><p>01-35 每个号码在所选周期内出现的次数</p></div>
+              <span class="chart-badge">FREQUENCY</span>
+            </div>
+            <div class="chart-body" id="chartFrontFreq"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>后区号码频率</h3><p>01-12 出现次数</p></div>
+              <span class="chart-badge">BACK</span>
+            </div>
+            <div class="chart-body" id="chartBackFreq"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>前区跨度走势</h3><p>每期最大号减最小号，观察号码分散程度</p></div>
+              <span class="chart-badge">SPAN</span>
+            </div>
+            <div class="chart-body" id="chartSpan"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel span-2">
+            <div class="chart-head">
+              <div><h3>前区和值走势</h3><p>每期前区 5 个号码之和，观察高低区间</p></div>
+              <span class="chart-badge" id="sumBadge">—</span>
+            </div>
+            <div class="chart-body" id="chartSum"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>奇偶结构</h3><p>前区 5 个号码的奇数 / 偶数分布</p></div>
+              <span class="chart-badge">ODD / EVEN</span>
+            </div>
+            <div class="chart-body" id="chartOdd"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>大小结构</h3><p>大号 18-35 / 小号 01-17</p></div>
+              <span class="chart-badge">BIG / SMALL</span>
+            </div>
+            <div class="chart-body" id="chartBig"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>五区分布</h3><p>前区号码落在五个区间中的比例</p></div>
+              <span class="chart-badge">ZONES</span>
+            </div>
+            <div class="chart-body" id="chartZone"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><h3>当前遗漏</h3><p>距离最近一次出现的期数，越深越久未开</p></div>
+              <span class="chart-badge">OMISSION</span>
+            </div>
+            <div class="chart-body" id="chartOmission"><div class="chart-loading">加载中…</div></div>
+          </article>
+
+          <article class="panel chart-panel span-2">
+            <div class="chart-head">
+              <div><h3>近 30 期号码矩阵</h3><p>每行一期，圆点表示当期开出的号码</p></div>
+              <span class="chart-badge">MATRIX</span>
+            </div>
+            <div class="chart-body" id="chartMatrix"><div class="chart-loading">加载中…</div></div>
+          </article>
+        </div>
+
+        <div class="panel chart-note-panel">
+          <strong>怎么看这些图</strong>
+          <p>
+            频率高代表近期出现次数多，遗漏深代表距离上次开出较久；和值、奇偶、大小和区间用于观察号码结构。
+            历史数据只能描述过去，不能预测未来开奖结果。
+          </p>
+        </div>
+      </section>
+
+      <section class="view" id="view-predict">
+        <div class="page-heading predict-heading">
+          <div>
+            <div class="section-kicker">NEXT DRAW LAB</div>
+            <h1>下期预测</h1>
+            <p>用历史走势、生日与今日时间生成多组大乐透号码。生成后本期号码即被存档锁定，开奖后自动核对命中与奖级。</p>
+          </div>
+          <div class="live-clock" id="predictTime">—</div>
+        </div>
+
+        <div class="predict-layout">
+          <aside class="panel predict-controls">
+            <div class="control-block">
+              <div class="control-label"><span>生成组数</span><em>固定 5 组，每组前区 5 + 后区 2</em></div>
+              <div class="segmented" id="predictCount" role="group" aria-label="生成组数">
+                <button type="button" data-count="5" class="is-active">5 组</button>
+              </div>
+            </div>
+
+            <div class="control-block">
+              <label class="control-label" for="birthdayInput"><span>你的生日</span><em>选填，用于个性化种子</em></label>
+              <input class="text-input" id="birthdayInput" type="date" max="2026-12-31" />
+              <div class="birthday-memory" id="birthdayMemory" aria-live="polite">
+                <span class="bm-label">上次输入</span>
+                <span class="bm-empty" id="birthdayMemoryEmpty">还没有记录，选择生日后会自动记住</span>
+                <b class="bm-value" id="birthdayMemoryValue" hidden></b>
+                <small class="bm-time" id="birthdayMemoryTime" hidden></small>
+                <button class="bm-fill" id="birthdayMemoryFill" type="button" hidden>填入</button>
+              </div>
+            </div>
+
+            <div class="control-block">
+              <div class="control-label"><span>预测策略</span><em>至少选择一种</em></div>
+              <div class="method-list" id="methodList">
+                <label class="method-item">
+                  <input type="checkbox" value="birthday" checked />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>生日 + 今日时间</b><small>生日与当前时间混合成种子</small></span>
+                </label>
+                <label class="method-item">
+                  <input type="checkbox" value="random" checked />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>随机灵感</b><small>实时随机种子，作为对照</small></span>
+                </label>
+                <label class="method-item">
+                  <input type="checkbox" value="ai" checked />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>AI 多维集成</b><small>7 个维度加权融合：热度/遗漏/近期/转移/邻号/混沌/常量</small></span>
+                </label>
+                <label class="method-item">
+                  <input type="checkbox" value="cosmos" checked />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>宇宙通识常量</b><small>π · e · φ · √2 · α⁻¹ · c · h · Nₐ · G · k_B · qₑ 数字流映射</small></span>
+                </label>
+                <label class="method-item">
+                  <input type="checkbox" value="chaos" />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>混沌动力学</b><small>logistic 映射轨迹，初值由上期号码与期号耦合</small></span>
+                </label>
+                <label class="method-item">
+                  <input type="checkbox" value="markov" />
+                  <span class="method-check"></span>
+                  <span class="method-copy"><b>马尔可夫链</b><small>相邻两期号码转移矩阵，从上期号码出发</small></span>
+                </label>
+              </div>
+            </div>
+
+            <button class="btn btn-primary full" id="generateBtn" type="button">生成下期号码 <span>→</span></button>
+
+            <p class="predict-disclaimer">
+              彩票开奖是独立随机事件，任何走势与生日组合都不能提高中奖概率。以下号码仅作娱乐参考，请理性购彩。
+            </p>
+          </aside>
+
+          <div class="predict-main">
+            <div class="predict-results-head">
+              <div>
+                <div class="section-kicker">GENERATED NUMBERS</div>
+                <h2 id="predictSummary">等待生成</h2>
+              </div>
+              <div class="predict-result-actions">
+                <button class="text-btn" id="copyAllBtn" type="button">复制全部</button>
+              </div>
+            </div>
+
+            <div class="predict-status" id="predictStatus" hidden></div>
+
+            <div class="predict-results" id="predictResults">
+              <div class="predict-placeholder">
+                <span class="placeholder-orbit"><span></span><span></span><span></span></span>
+                <strong>还没有生成号码</strong>
+                <p>设置生日和策略，点击「生成下期号码」。生成后这一批号码会被保存，开奖后自动核对中奖情况。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel predict-history">
+          <div class="explainer-head">
+            <div><div class="section-kicker">SAVED BATCHES</div><h3>历史预测记录</h3></div>
+            <span>生成即存档 · 开奖自动结算</span>
+          </div>
+          <div class="predict-history-body" id="predictHistory">
+            <div class="history-empty-note">还没有已保存的预测批次。</div>
+          </div>
+        </div>
+
+        <div class="panel predict-explainer">
+          <div class="explainer-head">
+            <div><div class="section-kicker">HOW IT WORKS</div><h3>六种预测思路</h3></div>
+            <span>全部在本机计算</span>
+          </div>
+          <div class="explainer-grid">
+            <div><b>生日 + 今日时间</b><p>把生日、当前日期时间混合成种子，生成可复现的个性化号码。</p></div>
+            <div><b>随机灵感</b><p>使用浏览器随机源生成对照组合，避免完全被历史数据束缚。</p></div>
+            <div><b>AI 多维集成</b><p>把近 10 期趋势、马尔可夫转移、邻号引力、混沌轨迹、宇宙常量 5 个维度各自归一化，按权重合成一张「号码势能表」，再带扰动加权采样。每组号码会标注本次的主导维度和全维势能最高的号码。</p></div>
+            <div><b>宇宙通识常量</b><p>取 π、e、黄金分割 φ、√2、精细结构常数 α⁻¹、光速 c、普朗克常数 h、阿伏伽德罗常数 Nₐ、引力常数 G、玻尔兹曼常数 k_B、元电荷 qₑ 共 11 个常量的有效数字流，按期号偏移逐位映射到号码，并用 ×φ、×α⁻¹ 分别眷顾斐波那契数与素数。</p></div>
+            <div><b>混沌动力学</b><p>用 logistic 映射（r≈3.9，混沌区）迭代 720 步，初值由上一期开奖号码与期号耦合生成，轨迹落桶频率作为号码权重——初值差之毫厘，轨迹谬以千里。</p></div>
+            <div><b>马尔可夫链</b><p>统计相邻两期的号码转移频率，构建「上期开 n → 下期现 m」的转移矩阵，从最近一期号码出发按转移概率采样。</p></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-left">
+        <span class="footer-brand">大乐透数据中心</span>
+        <span>数据来源：<a href="https://www.lottery.gov.cn/" target="_blank" rel="noreferrer">中国体彩网</a></span>
+        <span>开奖结果以官方公布为准</span>
+      </div>
+      <div class="footer-right">
+        <span>理性购彩 · 未满 18 周岁禁止购彩</span>
+        <span>预测仅供娱乐，不构成投注建议</span>
+      </div>
+    </footer>
+
+    <dialog class="detail-dialog" id="detailDialog" aria-label="大乐透开奖详情">
+      <div class="dialog-inner">
+        <button class="dialog-close" id="dialogClose" type="button" aria-label="关闭详情">×</button>
+        <div id="dialogBody"></div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
