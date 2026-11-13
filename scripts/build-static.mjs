@@ -18,6 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const OUT_DIR = path.join(ROOT, 'docs');
+// 仓库里的快照副本：本机抓一次提交上来，GitHub Actions 就用它发布
+const SNAPSHOT_FILE = path.join(ROOT, 'data', 'offline.json');
 const PORT = 8911;
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -93,6 +95,54 @@ async function copyDir(from, to) {
 }
 
 async function main() {
+  // GitHub Actions 的出口 IP 在境外，体彩官网会直接 567 拒绝，所以那边不走实时抓取，
+  // 直接用仓库里已经提交的快照。本机跑的时候默认实时抓，抓失败了再退回旧快照。
+  const useSnapshotOnly = process.env.USE_SNAPSHOT === '1' || process.argv.includes('--snapshot');
+
+  let bundle = null;
+
+  if (useSnapshotOnly) {
+    bundle = await readSnapshot();
+    if (!bundle) throw new Error('没有可用的仓库快照，先在本机跑一次不带 --snapshot 的构建');
+    console.log(`使用仓库快照：${bundle.latestIssue} 期 · ${bundle.generatedAt}`);
+  } else {
+    bundle = await collectLive();
+    if (bundle) {
+      await fs.mkdir(path.dirname(SNAPSHOT_FILE), { recursive: true });
+      await fs.writeFile(SNAPSHOT_FILE, JSON.stringify(bundle), 'utf8');
+    } else {
+      console.warn('\n实时抓取失败，退回仓库快照继续构建');
+      bundle = await readSnapshot();
+      if (!bundle) throw new Error('实时抓取失败，且仓库里没有可用快照');
+      console.log(`使用仓库快照：${bundle.latestIssue} 期 · ${bundle.generatedAt}`);
+    }
+  }
+
+  console.log('· 生成 docs/');
+  await fs.rm(OUT_DIR, { recursive: true, force: true });
+  await copyDir(PUBLIC_DIR, OUT_DIR);
+  await fs.mkdir(path.join(OUT_DIR, 'data'), { recursive: true });
+  await fs.writeFile(path.join(OUT_DIR, 'data', 'offline.json'), JSON.stringify(bundle), 'utf8');
+  await fs.writeFile(path.join(OUT_DIR, '.nojekyll'), '', 'utf8');
+
+  const kb = (JSON.stringify(bundle).length / 1024).toFixed(0);
+  console.log(
+    `\n完成：${bundle.draws.length} 期开奖 / 分析 ${Object.keys(bundle.analysis).join(',')}` +
+      `  数据 ${kb} KB  期号 ${bundle.latestIssue}`,
+  );
+  console.log(`输出目录：${OUT_DIR}`);
+}
+
+async function readSnapshot() {
+  try {
+    return JSON.parse(await fs.readFile(SNAPSHOT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** 拉起临时后端做实时快照；失败返回 null 交给上层降级 */
+async function collectLive() {
   console.log('启动临时后端用于快照…');
   const child = spawn(process.execPath, [path.join(ROOT, 'server.mjs')], {
     cwd: ROOT,
@@ -106,30 +156,15 @@ async function main() {
 
   try {
     await waitForServer();
-    const bundle = await collect();
-
-    console.log('· 生成 docs/');
-    await fs.rm(OUT_DIR, { recursive: true, force: true });
-    await copyDir(PUBLIC_DIR, OUT_DIR);
-    await fs.mkdir(path.join(OUT_DIR, 'data'), { recursive: true });
-    await fs.writeFile(
-      path.join(OUT_DIR, 'data', 'offline.json'),
-      JSON.stringify(bundle),
-      'utf8',
-    );
-    await fs.writeFile(path.join(OUT_DIR, '.nojekyll'), '', 'utf8');
-
-    const kb = (JSON.stringify(bundle).length / 1024).toFixed(0);
-    console.log(`\n完成：${draws_digest(bundle)}  数据 ${kb} KB  期号 ${bundle.latestIssue}`);
-    console.log(`输出目录：${OUT_DIR}`);
+    return await collect();
+  } catch (error) {
+    console.warn('实时快照失败:', error.message);
+    const tail = stderr.trim().split('\n').slice(-3).join('\n');
+    if (tail) console.warn(tail);
+    return null;
   } finally {
     child.kill('SIGTERM');
-    if (stderr.trim()) console.log('\n[后端日志]\n' + stderr.trim().split('\n').slice(-5).join('\n'));
   }
-}
-
-function draws_digest(bundle) {
-  return `${bundle.draws.length} 期开奖 / 分析 ${Object.keys(bundle.analysis).join(',')}`;
 }
 
 main().catch((error) => {

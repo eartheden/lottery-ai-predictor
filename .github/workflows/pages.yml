@@ -4,9 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    # 每天 UTC 14:20 = 北京时间 22:20，大乐透每周一三六 21:25 开奖，开完再抓
-    - cron: '20 14 * * *'
 
 permissions:
   contents: read
@@ -27,8 +24,12 @@ jobs:
         with:
           node-version: '20'
 
-      # 脚本会临时拉起 server.mjs，把真实后端吐出的 /api 响应快照成 docs/data/offline.json
+      # Actions 的出口 IP 在境外，体彩官网接口会直接 567 拒绝，
+      # 所以这里不实时抓取，直接用仓库里提交的 data/offline.json 快照。
+      # 快照由本机每天刷新后提交（体彩一三六 21:25 开奖）。
       - name: Build static site
+        env:
+          USE_SNAPSHOT: '1'
         run: node scripts/build-static.mjs
 
       - uses: actions/configure-pages@v5
