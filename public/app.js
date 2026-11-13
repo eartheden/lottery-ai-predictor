@@ -1815,7 +1815,11 @@
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="predict-history-note">存档保存在本机 <code>data/predictions.json</code>，开奖后自动结算；只保留最近 60 期。</p>`;
+      <p class="predict-history-note">${
+        window.__LOTTERY_STATIC__?.enabled
+          ? '存档保存在本浏览器，开奖后自动结算；只保留最近 60 期。'
+          : '存档保存在本机 <code>data/predictions.json</code>，开奖后自动结算；只保留最近 60 期。'
+      }</p>`;
   }
 
   async function generatePredictions() {
