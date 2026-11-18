@@ -7,3 +7,6 @@ data/user-settings.json
 docs/
 # 本机预测存档（个人数据，不上传）
 data/predictions.json
+# 企业微信通知状态与接收人缓存（本机运行态，不上传）
+data/notify-state.json
+data/wecom-config.json
