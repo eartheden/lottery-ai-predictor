@@ -8,9 +8,11 @@
  * 数据来源：data/offline.json（build-static.mjs 抓下来的快照）
  *           data/predictions.json（本机预测存档，用来算命中战绩）
  *
- * 推送通道（按优先级自动选）：
- *   1) 群机器人 webhook —— data/wecom-config.json 里配了 "webhook" 或环境变量 WECOM_WEBHOOK
- *   2) 企业微信智能机器人单聊 —— wecom-cli 发给授权人本人（需机器人「消息」权限有效）
+ * 推送通道（按优先级自动选，配了哪个用哪个）：
+ *   1) Server酱  —— data/wecom-config.json 的 "serverChanSendKey" 或环境变量 SERVERCHAN_SENDKEY（直达个人微信）
+ *   2) PushPlus  —— "pushplusToken" 或 PUSHPLUS_TOKEN（直达个人微信）
+ *   3) 企业微信群机器人 —— "webhook" 或 WECOM_WEBHOOK
+ *   4) 企业微信智能机器人单聊 —— wecom-cli，发给授权人本人（需机器人「消息」权限有效）
  *
  * 用法：
  *   node scripts/notify-wecom.mjs                # 有新期号就发
@@ -137,44 +139,56 @@ function buildMessage(snapshot) {
   const second = prizes.find((p) => p.name === '二等奖');
   const next = beijing(game?.next?.drawAt || snapshot?.nextDrawAt);
 
-  const lines = [];
-  lines.push(`## 大乐透 ${issue} 期开奖结果`);
-  lines.push(`**开奖日期**：${game.drawDate || '-'}`);
-  lines.push(
-    `**开奖号码**：<font color="warning">${front.map(pad).join(' ')}</font>` +
-      `　+　<font color="info">${back.map(pad).join(' ')}</font>`,
-  );
-  lines.push('');
-  if (first) {
-    lines.push(`**一等奖**：${first.winners} 注 · 单注 ${money(first.amount) || '-'}`);
-  }
-  if (second) {
-    lines.push(`**二等奖**：${second.winners} 注 · 单注 ${money(second.amount) || '-'}`);
-  }
-  lines.push(`**奖池**：${money(game.pool) || '-'}　**本期销量**：${money(game.sales) || '-'}`);
-
-  const pred = evaluatePredictions(issue, front, back);
-  if (pred) {
+  // 企业微信支持 <font color> 上色，微信侧（Server酱/PushPlus）走纯 Markdown，用加粗代替
+  const render = (color) => {
+    const ball = (nums, tone) =>
+      color ? `<font color="${tone}">${nums}</font>` : `**${nums}**`;
+    const lines = [];
+    lines.push(`**开奖日期**：${game.drawDate || '-'}`);
+    lines.push(
+      `**开奖号码**：${ball(front.map(pad).join(' '), 'warning')}` +
+        `　+　${ball(back.map(pad).join(' '), 'info')}`,
+    );
     lines.push('');
-    if (pred.winCount > 0) {
-      lines.push(`**本期预测**：${pred.total} 组中 ${pred.winCount} 组中奖，最高 ${pred.best}`);
-      lines.push(`> ${pred.lines.join('；')}`);
-    } else {
-      lines.push(`**本期预测**：${pred.total} 组均未中奖（前区最多命中 ${pred.maxFront} 个）`);
+    if (first) {
+      lines.push(`**一等奖**：${first.winners} 注 · 单注 ${money(first.amount) || '-'}`);
     }
-  }
+    if (second) {
+      lines.push(`**二等奖**：${second.winners} 注 · 单注 ${money(second.amount) || '-'}`);
+    }
+    lines.push(`**奖池**：${money(game.pool) || '-'}　**本期销量**：${money(game.sales) || '-'}`);
 
-  if (next) {
+    const pred = evaluatePredictions(issue, front, back);
+    if (pred) {
+      lines.push('');
+      if (pred.winCount > 0) {
+        lines.push(`**本期预测**：${pred.total} 组中 ${pred.winCount} 组中奖，最高 ${pred.best}`);
+        lines.push(`> ${pred.lines.join('；')}`);
+      } else {
+        lines.push(`**本期预测**：${pred.total} 组均未中奖（前区最多命中 ${pred.maxFront} 个）`);
+      }
+    }
+
+    if (next) {
+      lines.push('');
+      lines.push(`**下期开奖**：${next}`);
+    }
+    if (pushStatusArg === 'failed') {
+      lines.push('');
+      lines.push(`> 注意：本次快照推送 GitHub 失败（网络问题），线上页面可能仍是上一期。`);
+    }
     lines.push('');
-    lines.push(`**下期开奖**：${next}`);
-  }
-  if (pushStatusArg === 'failed') {
-    lines.push('');
-    lines.push(`> 注意：本次快照推送 GitHub 失败（网络问题），线上页面可能仍是上一期。`);
-  }
-  lines.push('');
-  lines.push(`[查看完整走势与预测](${SITE})`);
-  return { issue, content: lines.join('\n') };
+    lines.push(`[查看完整走势与预测](${SITE})`);
+    return lines.join('\n');
+  };
+
+  const title = `大乐透 ${issue} 期开奖结果`;
+  return {
+    issue,
+    title,
+    aibotContent: `## ${title}\n${render(true)}`,
+    wxContent: render(false),
+  };
 }
 
 /** 授权人 ID 作为 chat_id：优先环境变量 → 本地缓存 → whoami 解析后缓存 */
@@ -197,6 +211,33 @@ function resolveChatId() {
 
 function resolveWebhook() {
   return process.env.WECOM_WEBHOOK || readJson(CONFIG_FILE)?.webhook || null;
+}
+
+/** Server酱：https://sct.ftqq.com 扫码后拿 SendKey，消息以公众号服务通知进微信 */
+async function sendByServerChan(sendKey, title, content) {
+  const key = /^sct/i.test(sendKey) ? sendKey : `SCT${sendKey}`;
+  const response = await fetch(`https://sctapi.ftqq.com/${encodeURIComponent(key)}.send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, desp: content }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (data?.code !== 0) throw new Error(`Server酱返回 code=${data?.code ?? '?'} ${data?.message || ''}`.trim());
+  return 'serverchan';
+}
+
+/** PushPlus：https://www.pushplus.plus 扫码后拿 token，同样是公众号推送到微信 */
+async function sendByPushPlus(token, title, content) {
+  const response = await fetch('https://www.pushplus.plus/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, title, content, template: 'markdown' }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (data?.code !== 200) throw new Error(`PushPlus返回 code=${data?.code ?? '?'} ${data?.msg || ''}`.trim());
+  return 'pushplus';
 }
 
 /** 群机器人 webhook 通道：最省心，不需要机器人消息权限 */
@@ -244,24 +285,40 @@ async function main() {
   const snapshot = readJson(SNAPSHOT);
   if (!snapshot) throw new Error('没有 data/offline.json，先跑一次 scripts/build-static.mjs');
 
-  const { issue, content } = buildMessage(snapshot);
+  const message = buildMessage(snapshot);
+  const { issue, title, aibotContent, wxContent } = message;
   if (!issue) throw new Error('快照里没有期号');
 
   const state = readJson(STATE_FILE) || {};
   if (!FORCE && String(state.lastIssue) === issue) {
-    console.log(`期号 ${issue} 已通知过，跳过企业微信推送`);
+    console.log(`期号 ${issue} 已通知过，跳过推送`);
     return;
   }
+
+  const config = readJson(CONFIG_FILE) || {};
+  const serverChanKey = process.env.SERVERCHAN_SENDKEY || config.serverChanSendKey;
+  const pushplusToken = process.env.PUSHPLUS_TOKEN || config.pushplusToken;
 
   if (DRY_RUN) {
-    console.log('—— 预演，不发送 ——');
-    console.log(content);
+    const channel = serverChanKey ? 'Server酱' : pushplusToken ? 'PushPlus' : resolveWebhook() ? '群机器人' : '企业微信单聊';
+    console.log(`—— 预演，不发送（当前通道：${channel}）——`);
+    console.log(`【标题】${title}`);
+    console.log(wxContent);
     return;
   }
 
-  const webhook = resolveWebhook();
-  const channel = webhook ? await sendByWebhook(webhook, content) : sendByAibot(resolveChatId(), content);
-  console.log(`已推送企业微信（${channel}）：${issue} 期`);
+  // 通道优先级：Server酱 → PushPlus → 企业微信群机器人 → 智能机器人单聊
+  let channel;
+  if (serverChanKey) {
+    channel = await sendByServerChan(serverChanKey, title, wxContent);
+  } else if (pushplusToken) {
+    channel = await sendByPushPlus(pushplusToken, title, wxContent);
+  } else if (resolveWebhook()) {
+    channel = await sendByWebhook(resolveWebhook(), wxContent);
+  } else {
+    channel = sendByAibot(resolveChatId(), aibotContent);
+  }
+  console.log(`已推送（${channel}）：${issue} 期`);
 
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(
@@ -271,6 +328,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`企业微信通知失败：${error.message}`);
+  console.error(`通知发送失败：${error.message}`);
   process.exit(1);
 });
