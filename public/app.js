@@ -41,6 +41,8 @@
     analysisLimit: 50,
     analysisFetchedAt: null,
     analysisToken: 0,
+    predictionToken: 0,
+    issueToken: 0,
     refreshing: false,
     lastRefreshAt: 0,
     view: 'home',
@@ -141,8 +143,16 @@
     refs.views = $$('.view');
   }
 
+  function fetchTimeout(ms = 30_000) {
+    return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined;
+  }
+
   async function api(path) {
-    const response = await fetch(path, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const response = await fetch(path, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: fetchTimeout(),
+    });
     let data = null;
     try {
       data = await response.json();
@@ -160,6 +170,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
+      signal: fetchTimeout(),
     });
     let data = null;
     try {
@@ -354,6 +365,11 @@
         <span class="badge"><span class="live-dot"></span> 最新开奖</span>
         <span class="issue-pill">第 ${escapeHtml(draw.issue)} 期</span>
       </div>
+      ${
+        Number(draw.pool) >= 800_000_000
+          ? '<div class="pool-boost"><span>奖池破 8 亿</span>三至七等奖奖金已按官方规则上浮 20%-40%</div>'
+          : ''
+      }
       <div class="hero-card-title">
         <span class="glyph">大</span>
         <div>
@@ -634,7 +650,7 @@
       input.classList.remove('is-invalid');
     });
     refs.checkResult.innerHTML = '<span class="mini-muted">填写号码后查看命中情况</span>';
-    refs.checkRule.textContent = '与最新一期比对前区 5 个 + 后区 2 个号码 · 参考奖级未区分追加';
+    refs.checkRule.textContent = '与最新一期比对前区 5 个 + 后区 2 个号码 · 参考奖级未区分追加，奖金以官方公告为准';
   }
 
   function collectCheckNumbers() {
@@ -744,6 +760,15 @@
     }
   }
 
+  function syncTrendChips(limit) {
+    if (!refs.trendPeriod) return;
+    $$('.chip', refs.trendPeriod).forEach((item) => {
+      const active = Number(item.dataset.limit) === Number(limit);
+      item.classList.toggle('is-active', active);
+      item.setAttribute('aria-selected', String(active));
+    });
+  }
+
   async function loadAnalysis(limit = state.analysisLimit, { force = false, silent = false } = {}) {
     if (!force && state.analysis?.limit === limit) {
       renderQuickStats();
@@ -754,13 +779,19 @@
     const token = ++state.analysisToken;
     refs.trendUpdated.textContent = '更新中…';
     try {
-      const data = await api(`/api/analysis?limit=${limit}`);
+      const query = `/api/analysis?limit=${limit}${force ? '&force=1' : ''}`;
+      const data = await api(query);
       if (token !== state.analysisToken) return state.analysis;
       state.analysis = data;
+      // 以服务端实际返回的档位为准，离线快照缺少某档时标签与高亮不会说谎
+      const actual = Number(data?.limit) || limit;
+      state.analysisLimit = actual;
+      syncTrendChips(actual);
       state.analysisFetchedAt = new Date();
+      markovCache = null;
       renderQuickStats();
       if (state.view === 'trend') renderTrend();
-      refs.trendUpdated.textContent = `近 ${limit} 期 · 更新于 ${formatClock(state.analysisFetchedAt)}`;
+      refs.trendUpdated.textContent = `近 ${actual} 期 · 更新于 ${formatClock(state.analysisFetchedAt)}`;
       return data;
     } catch (error) {
       if (token === state.analysisToken) refs.trendUpdated.textContent = '走势加载失败';
@@ -1056,7 +1087,11 @@
   }
 
   function selectedMethods() {
-    return $$('#methodList input:checked').map((input) => input.value);
+    // 每组策略占一注，最多 PICK_COUNT 种；多勾的不再参与生成，
+    // 避免 methods 里列了 6 种却只生成 5 组（最后一种永远不会出号）。
+    return $$('#methodList input:checked')
+      .slice(0, PICK_COUNT)
+      .map((input) => input.value);
   }
 
   function cryptoRandom() {
@@ -1167,8 +1202,10 @@
 
   function chaosScoreFor(range, x0, r) {
     // logistic map：x(n+1) = r·x(n)·(1-x(n))，用轨迹落桶频率当权重
-    let x = x0;
-    if (!Number.isFinite(x) || x <= 0 || x >= 1) x = 0.6180339887;
+    // 初值统一归一到 (0,1)：越界时取小数部分而不是回退常量，
+    // 否则不同初值会静默退化成同一张固定权重表，混沌维度失去意义
+    let x = Number.isFinite(x0) ? ((x0 % 1) + 1) % 1 : 0.6180339887;
+    if (x === 0) x = 0.6180339887;
     const buckets = new Map();
     for (let i = 0; i < 720; i += 1) {
       x = r * x * (1 - x);
@@ -1215,6 +1252,14 @@
     return { front, back };
   }
 
+  // 转移矩阵只依赖 state.analysis.draws，缓存一份供前后区共用；
+  // loadAnalysis 拉到新数据后清空，保证口径跟随最新周期
+  let markovCache = null;
+  function cachedMarkov() {
+    if (!markovCache) markovCache = markovTransitions();
+    return markovCache;
+  }
+
   function normalizeScores(scores) {
     const max = Math.max(...scores.map((item) => item.score)) || 1;
     return scores.map((item) => ({ value: item.value, score: item.score / max }));
@@ -1245,7 +1290,7 @@
       for (const n of draw.groups[0].balls.map(Number)) recent.set(n, (recent.get(n) || 0) + 1);
     }
 
-    const { front: transF } = markovTransitions();
+    const { front: transF, back: transB } = cachedMarkov();
     const markovScore = [];
     for (let n = 1; n <= 35; n += 1) {
       let total = 0;
@@ -1276,7 +1321,6 @@
       '宇宙常量': normalizeScores(cosmosScore),
     };
 
-    const { back: transB } = markovTransitions();
     const backMarkov = [];
     for (let n = 1; n <= 12; n += 1) {
       let total = 0;
@@ -1305,11 +1349,19 @@
     });
   }
 
-  function topDimLabels(dims, weights, count = 3) {
+  // 按「实际选中的前区号码」在各维度的加权得分贡献排序，
+  // 而不是照抄静态权重表——这样「本次主导维度」才名副其实
+  function topDimLabels(dims, weights, front, count = 3) {
     return Object.entries(weights)
-      .sort((a, b) => b[1] - a[1])
+      .map(([name, weight]) => ({
+        name,
+        total: (dims[name] || [])
+          .filter((item) => front.includes(item.value))
+          .reduce((sum, item) => sum + weight * item.score, 0),
+      }))
+      .sort((a, b) => b.total - a.total)
       .slice(0, count)
-      .map(([name]) => name);
+      .map((item) => item.name);
   }
 
   function buildCandidate(method, context) {
@@ -1399,7 +1451,7 @@
     }
 
     if (method === 'markov') {
-      const { front: transF, back: transB } = markovTransitions();
+      const { front: transF, back: transB } = cachedMarkov();
       const last = latestDrawNumbers();
       if (!last.front.length) {
         // 没有历史数据时退化为随机
@@ -1452,7 +1504,7 @@
       return `${birthdayLabel} · 今日时间 ${formatDateTime(context.now)}`;
     }
     if (method === 'ai' && candidate?.dims) {
-      const topDims = topDimLabels(candidate.dims.dimsFront, candidate.dims.weightsFront, 3);
+      const topDims = topDimLabels(candidate.dims.dimsFront, candidate.dims.weightsFront, candidate.front, 3);
       const leaders = Object.values(candidate.dims.dimsFront)
         .reduce((acc, dim) => {
           dim.forEach(({ value, score }, i) => {
@@ -1487,19 +1539,29 @@
 
   function currentBatch() {
     const prediction = state.prediction;
+    return prediction.currentBatch || prediction.activeBatch || prediction.batches[0] || null;
+  }
+
+  function homeBatch() {
+    const prediction = state.prediction;
     return prediction.activeBatch || prediction.batches[0] || null;
   }
 
-  function applyPredictionState(data) {
+  function applyPredictionState(data, focusId = null) {
     const prediction = state.prediction;
+    const batches = Array.isArray(data?.batches) ? data.batches : [];
+    // 必须先清掉旧引用：currentBatch() 优先取 currentBatch，
+    // 否则结算结果 / 新生成批次都会被上一轮的对象盖住。
+    prediction.currentBatch = null;
     prediction.activeBatch = data?.activeBatch || null;
-    prediction.batches = Array.isArray(data?.batches) ? data.batches : [];
+    prediction.batches = batches;
     prediction.latestIssue = data?.latestIssue || null;
     prediction.nextIssue = data?.nextIssue || null;
     prediction.nextDrawAt = data?.nextDrawAt || null;
     prediction.loaded = true;
 
-    const batch = currentBatch();
+    const focused = focusId ? batches.find((item) => String(item.id) === String(focusId)) : null;
+    const batch = focused || prediction.activeBatch || batches[0] || null;
     prediction.results = batch?.results || [];
     prediction.generatedAt = batch?.createdAt ? new Date(batch.createdAt) : null;
     prediction.methods = batch?.methods || [];
@@ -1507,10 +1569,12 @@
     prediction.currentBatch = batch;
   }
 
-  async function loadPredictions({ silent = false } = {}) {
+  async function loadPredictions({ silent = false, focusId = null } = {}) {
+    const token = ++state.predictionToken;
     try {
       const data = await api('/api/predictions');
-      applyPredictionState(data);
+      if (token !== state.predictionToken) return null;
+      applyPredictionState(data, focusId);
       renderPredictStatus();
       renderPredictions();
       renderPredictHistory();
@@ -1729,11 +1793,31 @@
 
     const settled = batch?.status === 'settled';
     const labels = [...new Set(results.map((result) => METHODS[result.method]?.label || '号码'))];
-    refs.predictSummary.textContent = settled
+    const summary = settled
       ? `第 ${batch.targetIssue} 期 · ${results.length} 组 · 已开奖结算`
       : `第 ${batch.targetIssue} 期 · 已存档 ${results.length} 组 · 近 ${state.prediction.analysisLimit} 期 · ${labels.join(
           ' / ',
         )}`;
+    const viewingHistory = batch && batch.id !== homeBatch()?.id;
+    refs.predictSummary.innerHTML = `${escapeHtml(summary)}${
+      viewingHistory ? ' <button class="text-btn summary-back" id="backToActiveBtn" type="button">回到当前期</button>' : ''
+    }`;
+    $('#backToActiveBtn', refs.predictSummary)?.addEventListener('click', () => {
+      const active = state.prediction.activeBatch || state.prediction.batches[0] || null;
+      applyPredictionState(
+        {
+          activeBatch: active,
+          batches: state.prediction.batches,
+          latestIssue: state.prediction.latestIssue,
+          nextIssue: state.prediction.nextIssue,
+          nextDrawAt: state.prediction.nextDrawAt,
+        },
+        active?.id,
+      );
+      renderPredictStatus();
+      renderPredictions();
+      syncGenerateButton();
+    });
 
     refs.predictResults.innerHTML = results
       .map((result, index) => {
@@ -1798,7 +1882,7 @@
             ? `<span class="pill is-win">${escapeHtml(batch.bestTier)}</span>`
             : '<span class="pill is-lose">未中奖</span>'
           : '<span class="pill is-pending">待开奖</span>';
-        return `<tr data-open-batch="${escapeHtml(batch.id)}">
+        return `<tr data-open-batch="${escapeHtml(batch.id)}" tabindex="0" title="点击查看该批次号码">
           <td><b>${escapeHtml(batch.targetIssue)}</b></td>
           <td>${escapeHtml(formatDrawMoment(batch.createdAt))}</td>
           <td>${batch.results.length} 组</td>
@@ -1822,6 +1906,21 @@
       }</p>`;
   }
 
+  function openBatch(batchId) {
+    const batch = state.prediction.batches.find((item) => item.id === batchId);
+    if (!batch) return;
+    const prediction = state.prediction;
+    prediction.currentBatch = batch;
+    prediction.results = batch.results || [];
+    prediction.generatedAt = batch.createdAt ? new Date(batch.createdAt) : null;
+    prediction.methods = batch.methods || [];
+    prediction.analysisLimit = batch.analysisLimit || state.analysisLimit;
+    renderPredictStatus();
+    renderPredictions();
+    syncGenerateButton();
+    refs.predictResults.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   async function generatePredictions() {
     if (state.prediction.busy) return;
     if (state.prediction.activeBatch) {
@@ -1833,6 +1932,9 @@
     if (!methods.length) {
       showToast('请至少选择一种预测策略', 'error');
       return;
+    }
+    if ($$('#methodList input:checked').length > methods.length) {
+      showToast(`固定生成 ${PICK_COUNT} 组号码，超出部分策略本次未参与`);
     }
 
     state.prediction.busy = true;
@@ -1868,23 +1970,34 @@
 
       for (let index = 0; index < PICK_COUNT; index += 1) {
         const method = methods[index % methods.length];
+        const candidateKey = (item) => `${item.front.join(',')}-${item.back.join(',')}`;
         let candidate = null;
         let attempts = 0;
         while (attempts < 80) {
           candidate = buildCandidate(method, { ...context, index });
-          const key = `${candidate.front.join(',')}-${candidate.back.join(',')}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            break;
-          }
+          if (!seen.has(candidateKey(candidate))) break;
           attempts += 1;
         }
+        // 重试耗尽仍撞号时，退化为随机补一组不重复的，保证存档内无重复
+        if (!candidate || seen.has(candidateKey(candidate))) {
+          for (let guard = 0; guard < 200; guard += 1) {
+            const fallback = {
+              front: sampleUniform(cryptoRandom, 1, 35, 5),
+              back: sampleUniform(cryptoRandom, 1, 12, 2),
+            };
+            if (!seen.has(candidateKey(fallback))) {
+              candidate = fallback;
+              break;
+            }
+          }
+        }
         const finalCandidate = candidate || buildCandidate(method, { ...context, index });
+        seen.add(candidateKey(finalCandidate));
         results.push({
           ...finalCandidate,
           method,
           features: computeFeatures(finalCandidate.front, finalCandidate.back),
-          reason: methodReason(method, context, finalCandidate),
+          reason: methodReason(method, { ...context, index }, finalCandidate),
         });
       }
 
@@ -1899,7 +2012,8 @@
         results,
       });
 
-      applyPredictionState(data);
+      state.predictionToken += 1; // 作废在途的 loadPredictions，避免把刚生成的批次盖掉
+      applyPredictionState(data, data?.created?.id);
       renderPredictStatus();
       renderPredictions();
       renderPredictHistory();
@@ -2025,10 +2139,13 @@
       return;
     }
     openDialogLoading();
+    const token = ++state.issueToken;
     try {
       const data = await api(`/api/draw?issue=${encodeURIComponent(issue)}`);
+      if (token !== state.issueToken) return; // 期间又点了别的期号，丢弃旧响应
       openDetail(data.draw);
     } catch (error) {
+      if (token !== state.issueToken) return;
       closeDialog();
       showToast(error.message || '开奖详情加载失败', 'error');
     }
@@ -2087,6 +2204,8 @@
         loadAnalysis(state.analysisLimit, { force: false });
       } else {
         renderTrend();
+        // 后台静默刷新一次，保证切回走势页时图表包含最新一期
+        loadAnalysis(state.analysisLimit, { force: true, silent: true });
       }
     }
     if (view === 'predict') loadPredictions({ silent: true });
@@ -2140,11 +2259,7 @@
       const chip = event.target.closest('[data-limit]');
       if (!chip) return;
       state.analysisLimit = Number(chip.dataset.limit);
-      $$('.chip', refs.trendPeriod).forEach((item) => {
-        const active = item === chip;
-        item.classList.toggle('is-active', active);
-        item.setAttribute('aria-selected', String(active));
-      });
+      syncTrendChips(state.analysisLimit);
       loadAnalysis(state.analysisLimit, { force: true });
     });
 
@@ -2172,6 +2287,18 @@
           (METHODS[result.method] || METHODS.random).label
         }）`,
       );
+    });
+
+    refs.predictHistory.addEventListener('click', (event) => {
+      const row = event.target.closest('[data-open-batch]');
+      if (row) openBatch(row.dataset.openBatch);
+    });
+    refs.predictHistory.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target.closest('[data-open-batch]');
+      if (!row) return;
+      event.preventDefault();
+      openBatch(row.dataset.openBatch);
     });
 
     refs.dialogClose.addEventListener('click', closeDialog);

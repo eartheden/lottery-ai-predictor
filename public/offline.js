@@ -187,10 +187,10 @@
 
   function handleDraw(bundle, params) {
     var issue = (params.get('issue') || 'latest').trim();
-    if (issue === 'latest') return reply(Object.assign({}, bundle.overview.game, { success: true }));
+    if (issue === 'latest') return reply({ success: true, draw: bundle.overview.game });
     var draw = findDraw(bundle, issue);
     if (!draw) throw new Error('快照里没有第 ' + issue + ' 期，静态站只保留最近约 4 年数据');
-    return reply(Object.assign({}, draw, { success: true }));
+    return reply({ success: true, draw: draw });
   }
 
   function handleAnalysis(bundle, params) {
@@ -368,7 +368,9 @@
         staticMode = true;
         return runStatic();
       },
-      function () {
+      function (error) {
+        // 超时 / 主动取消不是「后端不存在」，不要因此把整个会话切到过期快照
+        if (error && (error.name === 'AbortError' || (init && init.signal && init.signal.aborted))) throw error;
         staticMode = true;
         return runStatic();
       },

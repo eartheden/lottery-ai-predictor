@@ -11,6 +11,7 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,18 +21,30 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const OUT_DIR = path.join(ROOT, 'docs');
 // 仓库里的快照副本：本机抓一次提交上来，GitHub Actions 就用它发布
 const SNAPSHOT_FILE = path.join(ROOT, 'data', 'offline.json');
-const PORT = 8911;
-const BASE = `http://127.0.0.1:${PORT}`;
+let BASE = 'http://127.0.0.1:8911';
+
+// 每次构建挑一个空闲端口，避免 8911 被别的进程占用时连到旧服务、抓到假快照
+function pickFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
 
 const HISTORY_PAGES = 12; // 12 × 50 期 ≈ 近 4 年，足够历史页与期号查询
 const PAGE_SIZE = 50; // 上游单页上限就是 50，传更大也只回 50
-const ANALYSIS_LIMITS = [20, 50, 100];
+const ANALYSIS_LIMITS = [20, 30, 50, 100];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitForServer(timeoutMs = 30_000) {
+async function waitForServer(timeoutMs = 30_000, isChildDead = () => false) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (isChildDead()) throw new Error('临时后端启动失败（进程已退出）');
     try {
       const response = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3_000) });
       if (response.ok) return true;
@@ -144,18 +157,24 @@ async function readSnapshot() {
 /** 拉起临时后端做实时快照；失败返回 null 交给上层降级 */
 async function collectLive() {
   console.log('启动临时后端用于快照…');
+  const port = await pickFreePort();
+  BASE = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [path.join(ROOT, 'server.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1' },
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
+  let childDead = false;
+  child.once('exit', () => {
+    childDead = true;
+  });
   child.stderr.on('data', (chunk) => {
     stderr += chunk.toString();
   });
 
   try {
-    await waitForServer();
+    await waitForServer(30_000, () => childDead);
     return await collect();
   } catch (error) {
     console.warn('实时快照失败:', error.message);

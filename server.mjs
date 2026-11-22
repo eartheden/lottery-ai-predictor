@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -193,8 +194,9 @@ async function fetchPage(page, pageSize) {
   throw lastError || new Error('上游接口请求失败');
 }
 
-async function getLatest() {
+async function getLatest(force = false) {
   const key = 'latest:dlt';
+  if (force) memoryCache.delete(key);
   const cached = getMemory(key);
   if (cached) return cached;
 
@@ -218,9 +220,9 @@ async function readDiskCache() {
   return diskCachePromise;
 }
 
-async function buildOverview() {
+async function buildOverview(force = false) {
   try {
-    const game = await getLatest();
+    const game = await getLatest(force);
     const data = {
       success: true,
       source: SOURCE_NAME,
@@ -251,19 +253,54 @@ async function buildOverview() {
 }
 
 async function getOverview(force = false) {
+  if (force) {
+    overviewCache = null;
+    memoryCache.delete('latest:dlt');
+  }
   if (!force && overviewCache && Date.now() - overviewCache.at < REFRESH_MS) {
     return { ...overviewCache.data, cached: true };
   }
-  const data = await buildOverview();
+  const data = await buildOverview(force);
   overviewCache = { at: Date.now(), data };
   return data;
 }
+
+// 上游单页上限 50 条；请求更多时必须分页聚合，否则统计口径会被静默截断
+const UPSTREAM_PAGE_SIZE = 50;
 
 async function getHistoryPage(page, pageSize) {
   const key = `page:${pageSize}:${page}`;
   const cached = getMemory(key);
   if (cached) return cached;
-  const value = await fetchPage(page, pageSize);
+
+  let value;
+  if (pageSize <= UPSTREAM_PAGE_SIZE) {
+    value = await fetchPage(page, pageSize);
+  } else {
+    // 逻辑页覆盖全局下标 [start, end)，按 50 条一页向上游取数后再按全局下标切片。
+    // 不能用 Math.floor(list.length / 50) 推下一页：上游最后一页不足 50 条时会错位。
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const firstUpstreamPage = Math.floor(start / UPSTREAM_PAGE_SIZE) + 1;
+    let first = null;
+    let total = 0;
+    const collected = [];
+    for (let upstreamPage = firstUpstreamPage; collected.length < end; upstreamPage += 1) {
+      const chunkPage = await fetchPage(upstreamPage, UPSTREAM_PAGE_SIZE);
+      if (!first) first = chunkPage;
+      if (!total) total = toNumber(chunkPage.total) || 0;
+      const chunk = chunkPage.list || [];
+      if (!chunk.length) break;
+      collected.push(...chunk);
+      if (total && collected.length >= total) break;
+    }
+    const offset = start - (firstUpstreamPage - 1) * UPSTREAM_PAGE_SIZE;
+    value = {
+      ...(first || {}),
+      list: collected.slice(offset, offset + pageSize),
+      pages: Math.ceil(total / pageSize) || first?.pages,
+    };
+  }
   setMemory(key, value, 60_000);
   return value;
 }
@@ -442,13 +479,18 @@ function buildAnalysis(value, limit) {
   };
 }
 
-async function getAnalysis(limit) {
+async function getAnalysis(limit, force = false) {
   const key = `analysis:${limit}`;
+  if (force) {
+    memoryCache.delete(key);
+    memoryCache.delete(`page:${limit}:1`);
+  }
   const cached = getMemory(key);
   if (cached) return cached;
   const value = await getHistoryPage(1, limit);
   const result = buildAnalysis(value, limit);
-  setMemory(key, result, 30_000);
+  // 与 history 的 60s 缓存同寿命，避免 30~60s 窗口内两套统计口径不一致
+  setMemory(key, result, 60_000);
   return result;
 }
 
@@ -746,8 +788,13 @@ async function createPredictionBatch(body) {
     });
   }
 
+  let batchId = `${targetIssue}-${Date.now()}`;
+  while (store.batches.some((item) => item.id === batchId)) {
+    batchId = `${targetIssue}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
   const batch = {
-    id: `${targetIssue}-${Date.now()}`,
+    id: batchId,
     baseIssue,
     targetIssue,
     targetDrawAt: body?.targetDrawAt ? String(body.targetDrawAt) : null,
@@ -770,7 +817,8 @@ async function createPredictionBatch(body) {
     (item) => item.status === 'pending' && String(item.targetIssue) === String(targetIssue),
   );
   if (existingIndex >= 0) {
-    batch.id = store.batches[existingIndex].id;
+    // 保留新 id：覆盖生成是新的一批号码，通知去重键（batch.id）必须随之变化，
+    // 否则用户收不到重新生成后的预测。
     store.batches.splice(existingIndex, 1);
   }
   store.batches.unshift(batch);
@@ -780,29 +828,67 @@ async function createPredictionBatch(body) {
   return batch;
 }
 
+// 预测批次存档成功后，把这一批号码推到微信（复用开奖通知的 Server酱等通道）。
+// 异步执行、不阻塞页面响应；失败只记日志，不影响号码已存档这个结果。
+function notifyPredictionBatch(batch) {
+  if (process.env.SKIP_NOTIFY === '1') return;
+  try {
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(__dirname, 'scripts', 'notify-wecom.mjs'),
+        '--prediction',
+        '--batch-id',
+        String(batch.id),
+      ],
+      { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('close', (code) => {
+      const firstLine = (out || err).trim().split('\n')[0] || '(无输出)';
+      console.log(
+        `[notify] 预测 ${batch.targetIssue} 期推送${code === 0 ? '成功' : `失败（exit ${code}）`}：${firstLine}`,
+      );
+    });
+    child.on('error', (error) => console.error('[notify] 启动失败:', error.message));
+  } catch (error) {
+    console.error('[notify] 触发失败:', error.message);
+  }
+}
+
 async function readJsonBody(req, limit = 256 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let failed = false;
+    const fail = (message, statusCode) => {
+      if (failed) return;
+      failed = true;
+      const error = new Error(message);
+      error.statusCode = statusCode;
+      reject(error);
+    };
+
     req.on('data', (chunk) => {
+      if (failed) return; // 继续读完请求体，但不销毁 socket，保证错误 JSON 能正常返回
       size += chunk.length;
-      if (size > limit) {
-        reject(new Error('请求体过大'));
-        req.destroy();
-        return;
-      }
+      if (size > limit) return fail('请求体过大', 413);
       chunks.push(chunk);
     });
     req.on('end', () => {
+      if (failed) return;
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolve({});
       try {
         resolve(JSON.parse(raw));
       } catch {
-        reject(new Error('请求体不是合法 JSON'));
+        fail('请求体不是合法 JSON', 400);
       }
     });
-    req.on('error', reject);
+    req.on('error', (error) => fail(error.message, 400));
   });
 }
 
@@ -879,6 +965,7 @@ async function route(req, res) {
     if (req.method === 'POST') {
       const body = await readJsonBody(req);
       const batch = await createPredictionBatch(body);
+      notifyPredictionBatch(batch);
       const state = await getPredictionState();
       return json(res, 200, { ...state, created: batch });
     }
@@ -923,6 +1010,7 @@ async function route(req, res) {
   if (pathname === '/api/history') {
     const page = clampInt(url.searchParams.get('page'), 1, 9999, 1);
     const pageSize = clampInt(url.searchParams.get('pageSize'), 1, 50, 10);
+    if (url.searchParams.get('force') === '1') memoryCache.delete(`page:${pageSize}:${page}`);
     return json(res, 200, await getHistory(page, pageSize));
   }
 
@@ -951,7 +1039,7 @@ async function route(req, res) {
 
   if (pathname === '/api/analysis') {
     const limit = clampInt(url.searchParams.get('limit'), 20, 100, 50);
-    return json(res, 200, await getAnalysis(limit));
+    return json(res, 200, await getAnalysis(limit, url.searchParams.get('force') === '1'));
   }
 
   if (pathname.startsWith('/api/')) {

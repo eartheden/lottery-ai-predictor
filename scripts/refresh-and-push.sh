@@ -9,14 +9,8 @@ echo "== 抓取最新开奖"
 node scripts/build-static.mjs
 
 PUSH_STATUS="none"
-echo "== 提交快照"
-git add data/offline.json
-if git diff --cached --quiet; then
-  echo "开奖数据没有变化，跳过提交"
-else
-  git -c user.name="eartheden" -c user.email="eartheden@users.noreply.github.com" \
-    commit -q -m "data: 刷新开奖快照 $(date +%F)"
-  echo "== 推送"
+
+push_main() {
   # 推送失败不终止流程：企业微信照样把开奖结果发出去，本地提交留着下次补推
   if git push -q origin main; then
     PUSH_STATUS="ok"
@@ -24,6 +18,27 @@ else
   else
     PUSH_STATUS="failed"
     echo "！推送失败（多为网络问题），提交已保存在本地，下次运行会自动补推"
+  fi
+}
+
+echo "== 提交快照"
+git add data/offline.json
+# 只判断 / 只提交 offline.json：不能把用户暂存区里的其它改动顺手推上远端
+if git diff --cached --quiet -- data/offline.json; then
+  echo "开奖数据没有变化，跳过提交"
+else
+  git -c user.name="eartheden" -c user.email="eartheden@users.noreply.github.com" \
+    commit -q -m "data: 刷新开奖快照 $(date +%F)" -- data/offline.json
+  echo "== 推送"
+  push_main
+fi
+
+# 本次没有新快照时也要补推：上次推送失败留下的提交不会因为抓取降级而永远滞留
+if [ "$PUSH_STATUS" = "none" ]; then
+  AHEAD=$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
+  if [ "$AHEAD" -gt 0 ] 2>/dev/null; then
+    echo "== 补推此前滞留的 $AHEAD 个提交"
+    push_main
   fi
 fi
 

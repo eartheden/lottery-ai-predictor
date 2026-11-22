@@ -15,7 +15,9 @@
  *   4) 企业微信智能机器人单聊 —— wecom-cli，发给授权人本人（需机器人「消息」权限有效）
  *
  * 用法：
- *   node scripts/notify-wecom.mjs                # 有新期号就发
+ *   node scripts/notify-wecom.mjs                # 有新期号就发开奖结果
+ *   node scripts/notify-wecom.mjs --prediction   # 发送最新一批下期预测号码（生成后自动触发）
+ *   node scripts/notify-wecom.mjs --batch-id <id># 指定预测批次（配合 --prediction）
  *   node scripts/notify-wecom.mjs --dry-run      # 只打印消息，不发送、不写状态
  *   node scripts/notify-wecom.mjs --force        # 忽略已通知记录，强制再发一次
  *   node scripts/notify-wecom.mjs --push-status failed   # 在消息里带上推送状态
@@ -36,6 +38,13 @@ const SITE = 'https://eartheden.github.io/lottery-ai-predictor/';
 const argv = process.argv.slice(2);
 const DRY_RUN = argv.includes('--dry-run');
 const FORCE = argv.includes('--force');
+const PREDICTION_MODE = argv.includes('--prediction');
+const batchIdArg = (() => {
+  const i = argv.indexOf('--batch-id');
+  if (i < 0) return '';
+  const value = argv[i + 1];
+  return value && !value.startsWith('--') ? value : '';
+})();
 const pushStatusArg = (() => {
   const i = argv.indexOf('--push-status');
   return i >= 0 ? argv[i + 1] : '';
@@ -58,6 +67,16 @@ const DLT_TIERS = {
   '0+2': '七等奖',
 };
 const TIER_ORDER = ['一等奖', '二等奖', '三等奖', '四等奖', '五等奖', '六等奖', '七等奖'];
+const METHOD_LABELS = {
+  ai: 'AI 多维集成',
+  cosmos: '宇宙通识常量',
+  chaos: '混沌动力学',
+  markov: '马尔可夫链',
+  birthday: '生日 + 今日时间',
+  random: '随机灵感',
+  history: '历史热度（已下线）',
+  omission: '遗漏回补（已下线）',
+};
 
 const readJson = (file) => {
   try {
@@ -191,6 +210,48 @@ function buildMessage(snapshot) {
   };
 }
 
+/** 下期预测生成后推送：把整批号码发到微信 */
+function buildPredictionMessage(batch) {
+  const issue = String(batch?.targetIssue || '');
+  const pad = (n) => String(n).padStart(2, '0');
+  const methods = Array.isArray(batch?.methods) && batch.methods.length
+    ? batch.methods.map((m) => METHOD_LABELS[m] || m).join(' / ')
+    : '—';
+  const created = beijing(batch?.createdAt);
+  const next = beijing(batch?.targetDrawAt);
+
+  const render = (color) => {
+    const ball = (nums, tone) => (color ? `<font color="${tone}">${nums}</font>` : `**${nums}**`);
+    const lines = [];
+    lines.push(`**目标期号**：${issue}`);
+    lines.push(`**基于期号**：${batch?.baseIssue || '-'}`);
+    lines.push(`**生成时间**：${created || '-'}`);
+    if (next) lines.push(`**开奖时间**：${next}`);
+    lines.push(`**生成策略**：${methods}`);
+    lines.push('');
+    const results = Array.isArray(batch?.results) ? batch.results : [];
+    results.forEach((pick, i) => {
+      const front = (pick.front || []).map(Number).map(pad).join(' ');
+      const back = (pick.back || []).map(Number).map(pad).join(' ');
+      const label = METHOD_LABELS[pick.method] || pick.method || '—';
+      lines.push(`${i + 1}. ${ball(front, 'warning')} + ${ball(back, 'info')}　\`${label}\``);
+    });
+    lines.push('');
+    lines.push('> 开奖为独立随机事件，号码仅供娱乐参考');
+    lines.push('');
+    lines.push(`[查看完整走势与预测](${SITE})`);
+    return lines.join('\n');
+  };
+
+  const title = `大乐透 ${issue} 期下期预测`;
+  return {
+    issue,
+    title,
+    aibotContent: `## ${title}\n${render(true)}`,
+    wxContent: render(false),
+  };
+}
+
 /** 授权人 ID 作为 chat_id：优先环境变量 → 本地缓存 → whoami 解析后缓存 */
 function resolveChatId() {
   if (process.env.WECOM_CHAT_ID) return process.env.WECOM_CHAT_ID;
@@ -205,7 +266,12 @@ function resolveChatId() {
   const match = flat.match(/授权真人用户身份[\s\S]{0,200}?ID[：:]\s*([A-Za-z0-9_-]+)/);
   if (!match) throw new Error('没能从 whoami 里解析出授权人 ID，可设置 WECOM_CHAT_ID 环境变量指定接收人');
   fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify({ chatId: match[1], savedAt: new Date().toISOString() }, null, 2));
+  // 必须合并写回，否则会把已配好的 SendKey / PushPlus / webhook 全部抹掉
+  const config = readJson(CONFIG_FILE) || {};
+  fs.writeFileSync(
+    CONFIG_FILE,
+    JSON.stringify({ ...config, chatId: match[1], savedAt: new Date().toISOString() }, null, 2),
+  );
   return match[1];
 }
 
@@ -276,22 +342,42 @@ function sendByAibot(chatId, content) {
     } catch (parseError) {
       if (parseError instanceof Error && parseError.message.startsWith('errcode=')) throw parseError;
     }
-    throw new Error(error.message.split('\n')[0]);
+    // execFileSync 的第一行含完整命令行（里面有 chat_id），只输出固定类别文案
+    throw new Error('wecom-cli 单聊发送失败（详见 wecom-cli 自身输出）');
   }
   return 'aibot';
 }
 
 async function main() {
-  const snapshot = readJson(SNAPSHOT);
-  if (!snapshot) throw new Error('没有 data/offline.json，先跑一次 scripts/build-static.mjs');
-
-  const message = buildMessage(snapshot);
-  const { issue, title, aibotContent, wxContent } = message;
-  if (!issue) throw new Error('快照里没有期号');
-
   const state = readJson(STATE_FILE) || {};
-  if (!FORCE && String(state.lastIssue) === issue) {
-    console.log(`期号 ${issue} 已通知过，跳过推送`);
+  let message;
+  let dedupeKey;
+  let dedupeValue;
+
+  if (PREDICTION_MODE) {
+    if (argv.includes('--batch-id') && !batchIdArg) throw new Error('--batch-id 缺少参数值');
+    const store = readJson(PREDICTIONS);
+    const batches = Array.isArray(store?.batches) ? store.batches : [];
+    const batch = batchIdArg
+      ? batches.find((b) => String(b.id) === batchIdArg)
+      : batches.find((b) => b.status === 'pending');
+    if (!batch) throw new Error(batchIdArg ? `找不到预测批次 ${batchIdArg}` : '没有待开奖的预测批次');
+    message = buildPredictionMessage(batch);
+    dedupeKey = 'lastPredictionBatchId';
+    dedupeValue = String(batch.id);
+  } else {
+    const snapshot = readJson(SNAPSHOT);
+    if (!snapshot) throw new Error('没有 data/offline.json，先跑一次 scripts/build-static.mjs');
+    message = buildMessage(snapshot);
+    dedupeKey = 'lastIssue';
+    dedupeValue = String(message.issue);
+  }
+
+  const { issue, title, aibotContent, wxContent } = message;
+  if (!issue) throw new Error('没有期号');
+
+  if (!FORCE && String(state[dedupeKey]) === String(dedupeValue)) {
+    console.log(`${PREDICTION_MODE ? '预测批次' : '期号'} ${dedupeValue} 已通知过，跳过推送`);
     return;
   }
 
@@ -307,24 +393,42 @@ async function main() {
     return;
   }
 
-  // 通道优先级：Server酱 → PushPlus → 企业微信群机器人 → 智能机器人单聊
-  let channel;
-  if (serverChanKey) {
-    channel = await sendByServerChan(serverChanKey, title, wxContent);
-  } else if (pushplusToken) {
-    channel = await sendByPushPlus(pushplusToken, title, wxContent);
-  } else if (resolveWebhook()) {
-    channel = await sendByWebhook(resolveWebhook(), wxContent);
-  } else {
-    channel = sendByAibot(resolveChatId(), aibotContent);
+  // 通道优先级：Server酱 → PushPlus → 企业微信群机器人 → 智能机器人单聊。
+  // 主通道配了但失败时继续降级，不能因为一个通道抖动就整条通知丢失。
+  const webhook = resolveWebhook();
+  const candidates = [];
+  if (serverChanKey) candidates.push(['serverchan', () => sendByServerChan(serverChanKey, title, wxContent)]);
+  if (pushplusToken) candidates.push(['pushplus', () => sendByPushPlus(pushplusToken, title, wxContent)]);
+  if (webhook) candidates.push(['webhook', () => sendByWebhook(webhook, wxContent)]);
+  candidates.push(['aibot', () => sendByAibot(resolveChatId(), aibotContent)]);
+
+  let channel = null;
+  const failures = [];
+  for (const [name, send] of candidates) {
+    try {
+      channel = await send();
+      break;
+    } catch (error) {
+      failures.push(`${name}: ${error.message}`);
+      console.warn(`通道 ${name} 发送失败，尝试下一个：${error.message}`);
+    }
   }
-  console.log(`已推送（${channel}）：${issue} 期`);
+  if (!channel) throw new Error(`所有通知通道均失败：${failures.join(' | ')}`);
+  console.log(`已推送（${channel}）：${issue} 期${PREDICTION_MODE ? '预测' : '开奖结果'}`);
 
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(
-    STATE_FILE,
-    JSON.stringify({ lastIssue: issue, notifiedAt: new Date().toISOString(), channel }, null, 2),
-  );
+  // 写前重新读取，避免与另一路通知（开奖 / 预测）并发时把对方的去重键覆盖回旧值；
+  // 临时文件 + rename 保证不会写出半截 JSON。
+  const latestState = readJson(STATE_FILE) || state;
+  const nextState = {
+    ...latestState,
+    [dedupeKey]: dedupeValue,
+    notifiedAt: new Date().toISOString(),
+    channel,
+  };
+  const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(nextState, null, 2));
+  fs.renameSync(tmp, STATE_FILE);
 }
 
 main().catch((error) => {

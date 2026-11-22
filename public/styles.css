@@ -5070,3 +5070,496 @@ svg {
     padding: 10px 8px;
   }
 }
+
+/* ============================================================
+   2026 视觉升级 · 深空玻璃主题
+   更深的底色 / 玻璃拟态面板 / 渐变描边 / 发光号码球 / 全局焦点环
+   ============================================================ */
+
+:root {
+  --bg: #06080f;
+  --bg-soft: #0a0f1a;
+  --surface: rgba(15, 22, 38, 0.66);
+  --surface-strong: #0e1626;
+  --line: rgba(148, 170, 210, 0.11);
+  --line-strong: rgba(148, 170, 210, 0.22);
+  --muted: #97a3ba;
+  --muted-2: #6d7a93;
+  --red: #ff4d5e;
+  --gold: #ffc857;
+  --blue: #4da3ff;
+  --grad-hot: linear-gradient(120deg, #ff5a4d, #ff2e63 55%, #ff7a3d);
+  --grad-cool: linear-gradient(120deg, #4da3ff, #7c5cff);
+  --glow-red: 0 10px 34px rgba(255, 46, 99, 0.3);
+  --ring: 0 0 0 3px rgba(255, 90, 77, 0.22);
+}
+
+body {
+  background:
+    radial-gradient(1100px 520px at 85% -10%, rgba(124, 92, 255, 0.09), transparent 60%),
+    radial-gradient(900px 480px at -10% 8%, rgba(255, 46, 99, 0.1), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+body::before {
+  background-image:
+    linear-gradient(rgba(148, 170, 210, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 170, 210, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+.page-glow-a {
+  background: radial-gradient(circle, rgba(255, 46, 99, 0.32), transparent 65%);
+  animation: glow-drift 16s ease-in-out infinite alternate;
+}
+
+.page-glow-b {
+  background: radial-gradient(circle, rgba(124, 92, 255, 0.2), transparent 65%);
+  animation: glow-drift 20s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes glow-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(40px, 30px, 0) scale(1.12); }
+}
+
+/* 顶栏 */
+.site-header {
+  border-bottom: 1px solid rgba(148, 170, 210, 0.1);
+  background: rgba(6, 8, 15, 0.7);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+.brand-mark {
+  background: linear-gradient(140deg, #ff7a5c 0%, #ff2e63 52%, #b3123a 100%);
+  box-shadow: 0 8px 26px rgba(255, 46, 99, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.main-nav {
+  border-color: rgba(148, 170, 210, 0.13);
+  background: rgba(148, 170, 210, 0.05);
+}
+
+.nav-btn.active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(255, 46, 99, 0.32), rgba(255, 122, 61, 0.16));
+  box-shadow: inset 0 0 0 1px rgba(255, 90, 77, 0.38), 0 4px 16px rgba(255, 46, 99, 0.18);
+}
+
+/* 通用按钮 */
+.btn {
+  border-radius: 13px;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ff6a4d 0%, #ff2e63 55%, #d81b4e 100%);
+  box-shadow: var(--glow-red), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 16px 44px rgba(255, 46, 99, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  filter: brightness(1.05);
+}
+
+.btn-ghost {
+  border-color: rgba(148, 170, 210, 0.16);
+  background: rgba(148, 170, 210, 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.btn-ghost:hover {
+  border-color: rgba(148, 170, 210, 0.3);
+  background: rgba(148, 170, 210, 0.1);
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 8px;
+}
+
+/* 标题与眉题 */
+.section-kicker {
+  color: #ff8f7d;
+  letter-spacing: 0.32em;
+}
+
+.hero h1 {
+  letter-spacing: -0.05em;
+}
+
+.hero h1 span {
+  background: linear-gradient(104deg, #ffffff 0%, #ffd9a0 34%, #ff8a65 68%, #ff2e63 100%);
+  background-size: 180% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: title-sheen 7s ease-in-out infinite alternate;
+}
+
+@keyframes title-sheen {
+  from { background-position: 0% 0; }
+  to { background-position: 90% 0; }
+}
+
+.hero-stat strong {
+  background: linear-gradient(120deg, #fff, #ffd9a0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 最新开奖卡 */
+.hero-card {
+  border: 1px solid rgba(148, 170, 210, 0.16);
+  background:
+    radial-gradient(130% 90% at 100% 0%, rgba(255, 46, 99, 0.2), transparent 55%),
+    radial-gradient(90% 70% at 0% 100%, rgba(124, 92, 255, 0.12), transparent 60%),
+    linear-gradient(155deg, rgba(23, 32, 52, 0.94), rgba(8, 12, 22, 0.98));
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 90, 77, 0.85), rgba(255, 200, 87, 0.7), transparent);
+  z-index: 2;
+}
+
+.badge {
+  border-color: rgba(255, 46, 99, 0.3);
+  color: #ffb9ae;
+  background: rgba(255, 46, 99, 0.12);
+}
+
+.feature-numbers {
+  border-color: rgba(148, 170, 210, 0.1);
+  background: rgba(3, 6, 13, 0.35);
+}
+
+/* 号码球：更强立体感与光晕 */
+.ball {
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.34),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.ball-red {
+  background: radial-gradient(120% 120% at 30% 22%, #ff9a80 0%, #ff4d5e 42%, #a80f30 100%);
+}
+
+.ball-blue {
+  background: radial-gradient(120% 120% at 30% 22%, #8fd0ff 0%, #3b8bef 45%, #123f96 100%);
+}
+
+.ball.lg {
+  box-shadow:
+    inset 0 3px 6px rgba(255, 255, 255, 0.38),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+    0 10px 26px rgba(0, 0, 0, 0.36);
+}
+
+.ball-hit {
+  outline-color: #ffe08b;
+  box-shadow: 0 0 0 5px rgba(255, 200, 87, 0.22), 0 0 22px rgba(255, 200, 87, 0.45), 0 8px 18px rgba(0, 0, 0, 0.3);
+}
+
+/* 奖池 8 亿提示条 */
+.pool-boost {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 200, 87, 0.3);
+  border-radius: 11px;
+  color: #ffd98d;
+  background: linear-gradient(100deg, rgba(255, 200, 87, 0.14), rgba(255, 122, 61, 0.06));
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.pool-boost span {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #2b1b00;
+  background: linear-gradient(120deg, #ffe59a, #ffc857);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* 面板：玻璃拟态 + 顶部渐变细线 */
+.panel {
+  position: relative;
+  border: 1px solid rgba(148, 170, 210, 0.12);
+  background: linear-gradient(160deg, rgba(20, 29, 48, 0.72), rgba(9, 13, 24, 0.82));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 22px;
+  right: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 170, 210, 0.35), transparent);
+  pointer-events: none;
+}
+
+.quick-stat,
+.insight-card {
+  border-color: rgba(148, 170, 210, 0.12);
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(255, 46, 99, 0.08), transparent 58%),
+    rgba(148, 170, 210, 0.035);
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.quick-stat:hover,
+.insight-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(148, 170, 210, 0.24);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
+}
+
+.quick-value,
+.insight-value {
+  background: linear-gradient(120deg, #ffe9c2, #ffc857);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 表格 */
+.history-table tbody tr:hover {
+  background: rgba(148, 170, 210, 0.06);
+}
+
+.issue-cell {
+  color: #ffd98d;
+}
+
+.page-btn.is-active {
+  border-color: rgba(255, 46, 99, 0.45);
+  background: rgba(255, 46, 99, 0.2);
+}
+
+/* 侧栏 CTA */
+.side-cta {
+  border-color: rgba(255, 200, 87, 0.18);
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(255, 200, 87, 0.12), transparent 60%),
+    radial-gradient(80% 80% at 0% 100%, rgba(124, 92, 255, 0.08), transparent 60%),
+    linear-gradient(155deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+}
+
+.predict-banner {
+  border-color: rgba(255, 90, 77, 0.22);
+  background:
+    radial-gradient(80% 160% at 100% 0%, rgba(255, 46, 99, 0.2), transparent 55%),
+    radial-gradient(60% 120% at 0% 100%, rgba(124, 92, 255, 0.1), transparent 60%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+}
+
+/* 走势图表面板 */
+.chart-panel {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.chart-panel:hover {
+  border-color: rgba(148, 170, 210, 0.24);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.chart-badge {
+  border-color: rgba(148, 170, 210, 0.16);
+  color: #8b98b0;
+}
+
+.freq-track i {
+  background: linear-gradient(180deg, #ff8a72, #e0224a);
+}
+
+.tone-blue .freq-track i {
+  background: linear-gradient(180deg, #72c1ff, #2456d8);
+}
+
+.chart-line {
+  stroke: #ff4d5e;
+  filter: drop-shadow(0 3px 9px rgba(255, 46, 99, 0.3));
+}
+
+.chart-dot {
+  fill: #ff4d5e;
+}
+
+.donut {
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.25), 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.donut-hole {
+  background: #0a1120;
+}
+
+.trend-matrix thead th {
+  background: #0e1626;
+}
+
+.trend-matrix .matrix-issue {
+  background: #0b1220;
+}
+
+.trend-matrix thead .matrix-issue {
+  background: #0e1626;
+}
+
+.trend-matrix .m-cell.has.matrix-front i {
+  background: #ff4d5e;
+  box-shadow: 0 0 7px rgba(255, 46, 99, 0.5);
+}
+
+.span-avg i {
+  background: #0e1626;
+}
+
+/* 预测页 */
+.live-clock {
+  border-color: rgba(255, 200, 87, 0.2);
+  color: #ffd98d;
+  background: rgba(255, 200, 87, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.method-item {
+  border-color: rgba(148, 170, 210, 0.12);
+  background: rgba(148, 170, 210, 0.03);
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.method-item:hover {
+  transform: translateX(2px);
+  border-color: rgba(148, 170, 210, 0.26);
+  background: rgba(148, 170, 210, 0.06);
+}
+
+.method-item input:checked + .method-check {
+  border-color: rgba(255, 90, 77, 0.7);
+  background: linear-gradient(135deg, #ff5a4d, #e0224a);
+  box-shadow: 0 0 10px rgba(255, 46, 99, 0.35);
+}
+
+.method-item:has(input:checked) {
+  border-color: rgba(255, 90, 77, 0.3);
+  background: rgba(255, 46, 99, 0.06);
+}
+
+.prediction-card {
+  border-color: rgba(148, 170, 210, 0.13);
+  background:
+    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 58%),
+    rgba(148, 170, 210, 0.03);
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.prediction-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.34), 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.pred-numbers {
+  border-color: rgba(148, 170, 210, 0.08);
+  background: rgba(2, 5, 11, 0.3);
+}
+
+.predict-status.is-pending {
+  border-color: rgba(255, 200, 87, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.predict-status.is-win {
+  border-color: rgba(64, 210, 159, 0.36);
+  box-shadow: 0 0 30px rgba(64, 210, 159, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.predict-history-table tbody tr[data-open-batch] {
+  cursor: pointer;
+}
+
+.predict-history-table tbody tr[data-open-batch]:hover {
+  background: rgba(148, 170, 210, 0.07);
+}
+
+.summary-back {
+  margin-left: 10px;
+  color: #ffd98d;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+/* 弹窗与提示 */
+.dialog-inner {
+  border-color: rgba(148, 170, 210, 0.18);
+  background:
+    radial-gradient(90% 70% at 100% 0%, rgba(255, 46, 99, 0.12), transparent 55%),
+    radial-gradient(70% 60% at 0% 100%, rgba(124, 92, 255, 0.08), transparent 60%),
+    linear-gradient(155deg, #101a2c 0%, #080d18 100%);
+}
+
+.detail-dialog::backdrop {
+  background: rgba(3, 5, 11, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.toast {
+  border-color: rgba(148, 170, 210, 0.22);
+  background: rgba(13, 20, 34, 0.94);
+  backdrop-filter: blur(14px);
+}
+
+/* 滚动条统一 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 170, 210, 0.22) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 170, 210, 0.18);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 170, 210, 0.32);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-glow-a,
+  .page-glow-b,
+  .hero h1 span {
+    animation: none;
+  }
+}
